@@ -65,6 +65,39 @@ export default function App() {
       // Get all compiled contents
       const contentData = await api.getAllContent();
       setContent(contentData.channels);
+
+      // Restore any user-inserted playlists from local device storage backup if missing from the server
+      const localBackupsRaw = localStorage.getItem("picapau_synced_playlists");
+      if (localBackupsRaw) {
+        try {
+          const localBackups = JSON.parse(localBackupsRaw);
+          if (Array.isArray(localBackups) && localBackups.length > 0) {
+            let needsServerRefresh = false;
+            for (const localPl of localBackups) {
+              const alreadyExistsOnServer = playlistsData.some(sp => sp.url === localPl.url);
+              if (!alreadyExistsOnServer && localPl.url && localPl.name) {
+                console.log("[Local Sync] Restorando lista ausente no servidor:", localPl.name);
+                await api.createPlaylist({
+                  name: localPl.name,
+                  description: localPl.description || "",
+                  url: localPl.url,
+                  format: localPl.format || "M3U",
+                  autoUpdate: localPl.autoUpdate !== undefined ? localPl.autoUpdate : true
+                });
+                needsServerRefresh = true;
+              }
+            }
+            if (needsServerRefresh) {
+              const refreshedPlaylists = await api.getPlaylists();
+              setPlaylists(refreshedPlaylists);
+              const refreshedContent = await api.getAllContent();
+              setContent(refreshedContent.channels);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to sync and restore local backup playlists", e);
+        }
+      }
     } catch (err) {
       console.error("Baseline loading failed", err);
     } finally {
@@ -149,6 +182,22 @@ export default function App() {
     autoUpdate: boolean;
   }) => {
     await api.createPlaylist(playlist);
+
+    // Save copy to local storage backup so it auto-syncs if server resets
+    try {
+      const localBackupsRaw = localStorage.getItem("picapau_synced_playlists");
+      let localBackups = [];
+      if (localBackupsRaw) {
+        localBackups = JSON.parse(localBackupsRaw);
+        if (!Array.isArray(localBackups)) localBackups = [];
+      }
+      localBackups = localBackups.filter((p: any) => p.url !== playlist.url);
+      localBackups.push(playlist);
+      localStorage.setItem("picapau_synced_playlists", JSON.stringify(localBackups));
+    } catch (e) {
+      console.error("Failed to update local storage playlist backups", e);
+    }
+
     // Refresh applet states
     const playlistsData = await api.getPlaylists();
     setPlaylists(playlistsData);
@@ -165,7 +214,25 @@ export default function App() {
   };
 
   const handleDeletePlaylist = async (id: string) => {
+    const playlistToDelete = playlists.find(p => p.id === id);
     await api.deletePlaylist(id);
+
+    // Remove from local storage backup
+    if (playlistToDelete) {
+      try {
+        const localBackupsRaw = localStorage.getItem("picapau_synced_playlists");
+        if (localBackupsRaw) {
+          let localBackups = JSON.parse(localBackupsRaw);
+          if (Array.isArray(localBackups)) {
+            localBackups = localBackups.filter((p: any) => p.url !== playlistToDelete.url);
+            localStorage.setItem("picapau_synced_playlists", JSON.stringify(localBackups));
+          }
+        }
+      } catch (e) {
+        console.error("Failed to remove playlist from local backup", e);
+      }
+    }
+
     const playlistsData = await api.getPlaylists();
     setPlaylists(playlistsData);
     const contentData = await api.getAllContent();

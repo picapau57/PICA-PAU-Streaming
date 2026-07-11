@@ -7,6 +7,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// Bypass strict TLS verification to support custom IPTV provider URLs with self-signed or expired SSL certs
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const app = express();
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), "data", "database.json");
@@ -214,7 +217,48 @@ function getDB(): DatabaseSchema {
   try {
     if (fs.existsSync(DB_FILE)) {
       const data = fs.readFileSync(DB_FILE, "utf-8");
-      return JSON.parse(data);
+      const db = JSON.parse(data);
+      let changed = false;
+      if (!db.users) { db.users = []; changed = true; }
+      if (!db.playlists) { db.playlists = []; changed = true; }
+      if (!db.history) { db.history = []; changed = true; }
+      if (!db.favorites) { db.favorites = []; changed = true; }
+      if (!db.logs) { db.logs = []; changed = true; }
+      if (!db.settings) {
+        db.settings = {
+          language: "pt-BR",
+          theme: "dark",
+          defaultQuality: "auto",
+          autoPlay: true,
+          autoUpdatePlaylists: true,
+          adultHidden: true,
+          cacheLimitMB: 512
+        };
+        changed = true;
+      }
+      // Ensure default premium playlist is registered
+      const hasPremium = db.playlists.some(p => p.url === "http://bit.ly/tvmeutedio");
+      if (!hasPremium) {
+        db.playlists.push({
+          id: "premium-playlist-1",
+          name: "Canais, Filmes e Séries Premium",
+          description: "Lista IPTV Principal (tvmeutedio)",
+          url: "http://bit.ly/tvmeutedio",
+          format: "M3U",
+          autoUpdate: true,
+          lastUpdated: new Date().toISOString(),
+          status: "Online",
+          channelCount: 0,
+          movieCount: 0,
+          seriesCount: 0,
+          channels: []
+        });
+        changed = true;
+      }
+      if (changed) {
+        saveDB(db);
+      }
+      return db;
     }
   } catch (err) {
     console.error("Failed to read database file, restoring defaults.", err);
@@ -251,6 +295,20 @@ function getDB(): DatabaseSchema {
         movieCount: 3,
         seriesCount: 2,
         channels: DEFAULT_CHANNELS
+      },
+      {
+        id: "premium-playlist-1",
+        name: "Canais, Filmes e Séries Premium",
+        description: "Lista IPTV Principal (tvmeutedio)",
+        url: "http://bit.ly/tvmeutedio",
+        format: "M3U",
+        autoUpdate: true,
+        lastUpdated: new Date().toISOString(),
+        status: "Online",
+        channelCount: 0,
+        movieCount: 0,
+        seriesCount: 0,
+        channels: []
       }
     ],
     history: [],
@@ -282,6 +340,52 @@ function saveDB(db: DatabaseSchema) {
     fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2), "utf-8");
   } catch (err) {
     console.error("Failed to write to database file", err);
+  }
+}
+
+// Background playlist fetcher to prevent cold-start loss
+async function refreshPlaylistInBackground(id: string) {
+  try {
+    // Get database on fresh read
+    const db = getDB();
+    const plIdx = db.playlists.findIndex(p => p.id === id);
+    if (plIdx === -1) return;
+    const playlist = db.playlists[plIdx];
+    
+    console.log(`[Background Sync] Iniciar sincronização da lista: ${playlist.name} (${playlist.url})`);
+    const response = await fetch(playlist.url, {
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" 
+      }
+    });
+    if (!response.ok) {
+      throw new Error(`Servidor respondeu com status HTTP ${response.status}`);
+    }
+    const text = await response.text();
+    const parsed = parseM3UPlaylist(text);
+    
+    const live = parsed.filter(c => c.category === "tv" || c.category === "sports" || c.category === "news" || c.category === "music" || c.category === "documentary");
+    const movies = parsed.filter(c => c.category === "movie" || c.category === "kids");
+    const series = parsed.filter(c => c.category === "series");
+
+    playlist.channels = parsed;
+    playlist.channelCount = live.length;
+    playlist.movieCount = movies.length;
+    playlist.seriesCount = series.length;
+    playlist.lastUpdated = new Date().toISOString();
+    playlist.status = "Online";
+
+    db.playlists[plIdx] = playlist;
+    saveDB(db);
+    writeLog("info", `Sincronização em segundo plano concluída: ${playlist.name} (${parsed.length} canais)`);
+  } catch (err: any) {
+    console.error(`[Background Sync] Falha ao atualizar lista no plano de fundo:`, err.message);
+    const db = getDB();
+    const plIdx = db.playlists.findIndex(p => p.id === id);
+    if (plIdx !== -1) {
+      db.playlists[plIdx].status = "Offline";
+      saveDB(db);
+    }
   }
 }
 
@@ -553,7 +657,7 @@ app.get("/api/proxy", async (req, res) => {
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) IPTV-Player/1.0"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
       }
     });
     
@@ -595,7 +699,7 @@ app.post("/api/playlists", async (req, res) => {
     // Attempt to fetch and parse the playlist
     try {
       const response = await fetch(url, {
-        headers: { "User-Agent": "IPTV-Player/1.0" }
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
       });
       if (response.ok) {
         const text = await response.text();
@@ -650,7 +754,7 @@ app.post("/api/playlists/:id/refresh", async (req, res) => {
 
   try {
     const response = await fetch(playlist.url, {
-      headers: { "User-Agent": "IPTV-Player/1.0" }
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
     });
     
     if (!response.ok) {
@@ -702,13 +806,18 @@ app.get("/api/content/all", (req, res) => {
   const allChannels: PlaylistItem[] = [];
   
   db.playlists.forEach(p => {
-    p.channels.forEach(ch => {
-      // Add playlist name as source
-      allChannels.push({
-        ...ch,
-        group: ch.group || "Geral"
+    if (!p.channels || p.channels.length === 0) {
+      // Trigger a background load if it's currently uninitialized/empty
+      refreshPlaylistInBackground(p.id);
+    } else {
+      p.channels.forEach(ch => {
+        // Add playlist name as source
+        allChannels.push({
+          ...ch,
+          group: ch.group || "Geral"
+        });
       });
-    });
+    }
   });
 
   res.json({
@@ -820,6 +929,12 @@ app.post("/api/settings", (req, res) => {
   res.json(db.settings);
 });
 
+// Global error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error("Unhandled API error:", err);
+  res.status(500).json({ error: "Erro interno no servidor: " + err.message });
+});
+
 // Serve frontend with Vite middleware in development, and serve static build in production
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
@@ -838,6 +953,19 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`PICA-PAU Streaming backend running on port ${PORT}`);
+    
+    // Auto-refresh empty playlists in background on start
+    try {
+      const db = getDB();
+      db.playlists.forEach(p => {
+        if (!p.channels || p.channels.length === 0) {
+          console.log(`[Auto Start] Detectada playlist vazia "${p.name}". Sincronizando no plano de fundo...`);
+          refreshPlaylistInBackground(p.id);
+        }
+      });
+    } catch (err) {
+      console.error("Failed to run startup background sync:", err);
+    }
   });
 }
 
