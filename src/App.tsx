@@ -8,9 +8,11 @@ import PremiumPlayer from "./components/PremiumPlayer";
 import CastModal from "./components/CastModal";
 import ManageListModal from "./components/ManageListModal";
 import AdminPanel from "./components/AdminPanel";
+import InstallAppModal from "./components/InstallAppModal";
 import { 
   LogOut, Tv, Radio, Settings, ShieldCheck, Layers, 
-  HelpCircle, MonitorPlay, Moon, Sun, Info, Sliders, CheckCircle2 
+  HelpCircle, MonitorPlay, Moon, Sun, Info, Sliders, CheckCircle2,
+  Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -41,6 +43,9 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCastOpen, setIsCastOpen] = useState(false);
   const [isManageListOpen, setIsManageListOpen] = useState(false);
+  const [isInstallOpen, setIsInstallOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
   const [activeMedia, setActiveMedia] = useState<PlaylistItem | null>(null);
   
   // Loading indicators
@@ -108,6 +113,47 @@ export default function App() {
   useEffect(() => {
     loadBaseData();
   }, []);
+
+  // Capture PWA installation states and events
+  useEffect(() => {
+    if (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true
+    ) {
+      setIsInstalled(true);
+    }
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      console.log("[PWA] beforeinstallprompt capturado com sucesso.");
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+      console.log("[PWA] Aplicativo instalado pelo usuário!");
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  const handleTriggerInstall = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`[PWA] Escolha do usuário: ${outcome}`);
+    if (outcome === "accepted") {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    }
+  };
 
   // Sync profile-specific configurations when a profile is selected
   useEffect(() => {
@@ -393,6 +439,7 @@ export default function App() {
         onTabChange={setCurrentTab}
         onOpenCast={() => setIsCastOpen(true)}
         onOpenManageList={() => setIsManageListOpen(true)}
+        onOpenInstall={() => setIsInstallOpen(true)}
         activeProfile={activeProfile}
         onLogout={handleLogout}
         isAdmin={!isVisitor}
@@ -415,6 +462,17 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Upper header install shortcut */}
+            {!isInstalled && (
+              <button
+                onClick={() => setIsInstallOpen(true)}
+                className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-xs font-bold text-cyan-400 border border-cyan-500/20 hover:border-cyan-500/40 transition-all active:scale-95 cursor-pointer"
+              >
+                <Download className="w-4 h-4 animate-bounce text-cyan-400" />
+                <span>Instalar App ⚡</span>
+              </button>
+            )}
+
             {/* Highlighted Casting Button */}
             <button
               onClick={() => setIsCastOpen(true)}
@@ -629,6 +687,16 @@ export default function App() {
         <CastModal
           activeMediaName={activeMedia?.name || "Transmissão IPTV Geral"}
           onClose={() => setIsCastOpen(false)}
+        />
+      )}
+
+      {/* PWA Installation helper modal */}
+      {isInstallOpen && (
+        <InstallAppModal
+          deferredPrompt={deferredPrompt}
+          onClose={() => setIsInstallOpen(false)}
+          onTriggerInstall={handleTriggerInstall}
+          isInstalled={isInstalled}
         />
       )}
 

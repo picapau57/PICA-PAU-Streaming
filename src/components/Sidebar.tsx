@@ -11,6 +11,7 @@ interface SidebarProps {
   onTabChange: (tab: string) => void;
   onOpenCast: () => void;
   onOpenManageList: () => void;
+  onOpenInstall: () => void;
   activeProfile: { name: string; avatar: string } | null;
   onLogout: () => void;
   isAdmin: boolean;
@@ -23,6 +24,7 @@ export default function Sidebar({
   onTabChange,
   onOpenCast,
   onOpenManageList,
+  onOpenInstall,
   activeProfile,
   onLogout,
   isAdmin,
@@ -137,6 +139,18 @@ export default function Sidebar({
             >
               <Layers className="w-4 h-4 text-neon-purple" />
               <span>Gerenciar IPTV</span>
+            </button>
+
+            {/* Install app trigger */}
+            <button
+              onClick={onOpenInstall}
+              className="w-full flex items-center gap-3.5 px-3 py-2 rounded-xl text-left text-xs font-bold text-cyan-300 hover:bg-cyan-500/10 hover:text-cyan-200 transition-all cursor-pointer border border-cyan-500/10"
+            >
+              <Download className="w-4 h-4 text-cyan-400 animate-bounce" />
+              <span className="flex items-center gap-1.5">
+                Instalar Aplicativo
+                <span className="bg-cyan-500/20 text-cyan-400 text-[8px] font-mono px-1.5 py-0.5 rounded-full uppercase leading-none font-extrabold shrink-0">PWA</span>
+              </span>
             </button>
 
             {/* Configs tab */}
