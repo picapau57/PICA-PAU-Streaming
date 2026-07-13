@@ -226,6 +226,8 @@ export default function App() {
     url: string;
     format: "M3U" | "M3U8" | "XML" | "Xtream";
     autoUpdate: boolean;
+    rawContent?: string;
+    classificationMode?: string;
   }) => {
     await api.createPlaylist(playlist);
 

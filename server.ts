@@ -505,7 +505,8 @@ function parseM3UPlaylist(m3uText: string): PlaylistItem[] {
 }
 
 // Global middlewares
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // API Endpoints
 app.get("/api/health", (req, res) => {
@@ -677,42 +678,59 @@ app.get("/api/proxy", async (req, res) => {
   }
 });
 
-// Add playlist (with optional online parsing)
+// Add playlist (with optional online parsing or raw content pasting)
 app.post("/api/playlists", async (req, res) => {
-  const { name, description, url, format, autoUpdate } = req.body;
-  if (!name || !url) {
-    return res.status(400).json({ error: "Nome e URL são obrigatórios." });
+  const { name, description, url, format, autoUpdate, rawContent, classificationMode } = req.body;
+  if (!name || (!url && !rawContent)) {
+    return res.status(400).json({ error: "Nome e URL ou Conteúdo são obrigatórios." });
   }
 
   try {
     const db = getDB();
+    const finalUrl = url || `pasted://pasted-list-${crypto.randomBytes(6).toString("hex")}`;
     
     // Check if playlist already exists
-    const exists = db.playlists.some(p => p.url === url);
-    if (exists) {
-      return res.status(400).json({ error: "Esta lista de reprodução já está cadastrada." });
+    if (url) {
+      const exists = db.playlists.some(p => p.url === url);
+      if (exists) {
+        return res.status(400).json({ error: "Esta lista de reprodução já está cadastrada." });
+      }
     }
 
     let parsedChannels: PlaylistItem[] = [];
     let status: "Online" | "Offline" = "Offline";
 
-    // Attempt to fetch and parse the playlist
-    try {
-      const response = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
-      });
-      if (response.ok) {
-        const text = await response.text();
-        parsedChannels = parseM3UPlaylist(text);
-        status = "Online";
+    if (rawContent) {
+      // Process raw content pasted or uploaded directly
+      parsedChannels = parseM3UPlaylist(rawContent);
+      status = "Online";
+    } else if (url) {
+      // Attempt to fetch and parse the playlist from the internet
+      try {
+        const response = await fetch(url, {
+          headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" }
+        });
+        if (response.ok) {
+          const text = await response.text();
+          parsedChannels = parseM3UPlaylist(text);
+          status = "Online";
+        }
+      } catch (err) {
+        console.warn("Could not parse remote M3U. Initializing list as Offline.", err);
       }
-    } catch (err) {
-      console.warn("Could not parse remote M3U. Initializing list as Offline.", err);
     }
 
-    // Fallback if M3U is not accessible during offline testing
+    // Fallback if M3U has no channels
     if (parsedChannels.length === 0) {
       parsedChannels = [];
+    }
+
+    // Apply custom classification modes if forced by the user
+    if (classificationMode && classificationMode !== "auto") {
+      parsedChannels = parsedChannels.map(ch => ({
+        ...ch,
+        category: classificationMode as any
+      }));
     }
 
     const live = parsedChannels.filter(c => c.category === "tv" || c.category === "sports" || c.category === "news" || c.category === "music" || c.category === "documentary");
@@ -722,10 +740,10 @@ app.post("/api/playlists", async (req, res) => {
     const newPlaylist: Playlist = {
       id: `pl-${crypto.randomBytes(6).toString("hex")}`,
       name,
-      description: description || "Sem descrição",
-      url,
+      description: description || (rawContent ? "Lista importada por texto" : "Sem descrição"),
+      url: finalUrl,
       format: format || "M3U",
-      autoUpdate: !!autoUpdate,
+      autoUpdate: rawContent ? false : !!autoUpdate,
       lastUpdated: new Date().toISOString(),
       status,
       channelCount: live.length,

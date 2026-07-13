@@ -59,7 +59,15 @@ export const api = {
     return res.json();
   },
 
-  async createPlaylist(playlist: { name: string; description: string; url: string; format: string; autoUpdate: boolean }): Promise<any> {
+  async createPlaylist(playlist: { 
+    name: string; 
+    description: string; 
+    url: string; 
+    format: string; 
+    autoUpdate: boolean; 
+    rawContent?: string; 
+    classificationMode?: string; 
+  }): Promise<any> {
     const res = await fetch(`${API_BASE}/api/playlists`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
