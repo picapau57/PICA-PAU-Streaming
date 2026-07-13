@@ -364,12 +364,20 @@ export default function PremiumPlayer({
                   </ol>
                 </div>
 
-                <div className="flex gap-2 justify-end text-xs pt-1">
+                <div className="flex flex-wrap gap-2 justify-end text-xs pt-1">
+                  <a
+                    href={`vlc://${item.url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 bg-orange-600/90 hover:bg-orange-600 text-white border border-orange-500/40 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/15"
+                  >
+                    🧡 VLC Player
+                  </a>
                   <button
                     onClick={() => window.open(item.url, "_blank")}
                     className="px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg hover:bg-neutral-800 text-neutral-300 cursor-pointer text-xs font-medium"
                   >
-                    Abrir Link Direto do Canal 🔗
+                    Abrir Link Direto 🔗
                   </button>
                   <button
                     onClick={() => setShowUnlockInstructions(false)}
@@ -413,24 +421,43 @@ export default function PremiumPlayer({
                   </p>
                 </div>
 
-                {/* Warning box */}
-                <div className="mt-3 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-[11px] text-yellow-500 max-w-xs leading-relaxed">
-                  ⚠️ Mídia bloqueada pelo navegador (Mixed Content / CORS). Os links HTTP são protegidos pelo HTTPS.
+                {/* Dynamic warning box based on state and URL extension */}
+                <div className="mt-3 px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-xl text-[11px] text-neutral-300 max-w-xs leading-relaxed text-left space-y-1">
+                  <span className="font-semibold text-yellow-500 flex items-center gap-1 text-[10px] uppercase tracking-wider">
+                    ⚠️ Restrição Detectada
+                  </span>
+                  <p className="text-[10px] text-neutral-400 leading-normal">
+                    {item.url.toLowerCase().endsWith(".ts") ? (
+                      "Formato .TS (MPEG-TS) detectado. Navegadores da web não conseguem decodificar este formato nativamente. Use o botão VLC Player abaixo para assistir perfeitamente."
+                    ) : useProxy ? (
+                      "O link está passando pelo Proxy de Mídia. Se não carregar, o servidor IPTV pode estar bloqueando servidores de nuvem ou o formato de vídeo é incompatível."
+                    ) : (
+                      "Bloqueio Mixed Content (HTTP em site HTTPS) ou CORS pelo navegador. Tente ativar o 'Proxy de Mídia' ao lado ou siga o 'Como Assistir'."
+                    )}
+                  </p>
                 </div>
 
-                <div className="mt-3.5 flex items-center gap-2">
+                <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
                   <button
                     onClick={() => setShowUnlockInstructions(true)}
-                    className="px-3 py-1.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/30 rounded-lg text-xs font-bold hover:bg-neon-blue/40 cursor-pointer transition-all flex items-center gap-1"
+                    className="px-2.5 py-1.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/30 rounded-lg text-xs font-bold hover:bg-neon-blue/40 cursor-pointer transition-all flex items-center gap-1"
                   >
                     🔓 Como Assistir?
                   </button>
                   <button
                     onClick={() => window.open(item.url, "_blank")}
-                    className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-xs hover:bg-neutral-700 cursor-pointer transition-all flex items-center gap-1"
+                    className="px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-xs hover:bg-neutral-700 cursor-pointer transition-all flex items-center gap-1"
                   >
                     🔗 Abrir Link Direto
                   </button>
+                  <a
+                    href={`vlc://${item.url}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/40 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/20"
+                  >
+                    🧡 Abrir no VLC Player
+                  </a>
                 </div>
 
                 {/* Fluctuating equalizer wave bars to simulate live digital stream */}
