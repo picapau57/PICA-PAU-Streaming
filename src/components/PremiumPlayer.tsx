@@ -3,7 +3,8 @@ import { PlaylistItem } from "../types";
 import { 
   Play, Pause, Volume2, VolumeX, Maximize, Minimize, Settings, 
   Tv, Subtitles, Music, FastForward, SkipForward, SkipBack, 
-  Layers, Info, Check, Monitor, Layout, PictureInPicture2, Sparkles, Star
+  Layers, Info, Check, Monitor, Layout, PictureInPicture2, Sparkles, Star,
+  Copy, Download, ExternalLink
 } from "lucide-react";
 import { motion } from "motion/react";
 import Hls from "hls.js";
@@ -55,6 +56,26 @@ export default function PremiumPlayer({
   const [simulatedTime, setSimulatedTime] = useState(0);
   const [showUnlockInstructions, setShowUnlockInstructions] = useState(false);
   const [useProxy, setUseProxy] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(item.url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadM3U = () => {
+    const m3uContent = `#EXTM3U\n#EXTINF:-1,${item.name}\n${item.url}\n`;
+    const blob = new Blob([m3uContent], { type: "application/x-mpegurl" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${item.name.replace(/[^a-zA-Z0-9]/g, "_")}.m3u`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // EPG Mock updates for live channels
   const [epgTimeline, setEpgTimeline] = useState({
@@ -365,19 +386,30 @@ export default function PremiumPlayer({
                 </div>
 
                 <div className="flex flex-wrap gap-2 justify-end text-xs pt-1">
-                  <a
-                    href={`vlc://${item.url}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-3 py-2 bg-orange-600/90 hover:bg-orange-600 text-white border border-orange-500/40 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/15"
-                  >
-                    🧡 VLC Player
-                  </a>
                   <button
-                    onClick={() => window.open(item.url, "_blank")}
-                    className="px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg hover:bg-neutral-800 text-neutral-300 cursor-pointer text-xs font-medium"
+                    onClick={handleDownloadM3U}
+                    className="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/40 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/15"
                   >
-                    Abrir Link Direto 🔗
+                    📥 Baixar .M3U
+                  </button>
+                  <button
+                    onClick={handleCopyLink}
+                    className={`px-3 py-2 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 border ${
+                      copied 
+                        ? "bg-green-600 text-white border-green-500/40" 
+                        : "bg-neutral-900 border-neutral-800 text-neutral-300 hover:bg-neutral-800"
+                    }`}
+                  >
+                    {copied ? "✅ Copiado!" : "📋 Copiar Link"}
+                  </button>
+                  <button
+                    onClick={() => {
+                      const vlcUrl = `vlc://${item.url.replace(/^https?:\/\//, "")}`;
+                      window.location.href = vlcUrl;
+                    }}
+                    className="px-3 py-2 bg-neutral-900 border border-neutral-800 text-neutral-400 rounded-lg text-xs hover:bg-neutral-800 cursor-pointer transition-all flex items-center gap-1"
+                  >
+                    🧡 Abrir no VLC
                   </button>
                   <button
                     onClick={() => setShowUnlockInstructions(false)}
@@ -440,24 +472,38 @@ export default function PremiumPlayer({
                 <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
                   <button
                     onClick={() => setShowUnlockInstructions(true)}
-                    className="px-2.5 py-1.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/30 rounded-lg text-xs font-bold hover:bg-neon-blue/40 cursor-pointer transition-all flex items-center gap-1"
+                    className="px-2.5 py-1.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/30 rounded-lg text-[11px] font-bold hover:bg-neon-blue/40 cursor-pointer transition-all flex items-center gap-1"
                   >
                     🔓 Como Assistir?
                   </button>
+                  
                   <button
-                    onClick={() => window.open(item.url, "_blank")}
-                    className="px-2.5 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-xs hover:bg-neutral-700 cursor-pointer transition-all flex items-center gap-1"
+                    onClick={handleDownloadM3U}
+                    className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/40 rounded-lg text-[11px] font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/20"
                   >
-                    🔗 Abrir Link Direto
+                    📥 Baixar .M3U (VLC)
                   </button>
-                  <a
-                    href={`vlc://${item.url}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/40 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/20"
+
+                  <button
+                    onClick={handleCopyLink}
+                    className={`px-2.5 py-1.5 text-[11px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1 border ${
+                      copied 
+                        ? "bg-green-600 text-white border-green-500/40" 
+                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
+                    }`}
                   >
-                    🧡 Abrir no VLC Player
-                  </a>
+                    {copied ? "✅ Copiado!" : "📋 Copiar Link"}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const vlcUrl = `vlc://${item.url.replace(/^https?:\/\//, "")}`;
+                      window.location.href = vlcUrl;
+                    }}
+                    className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 text-neutral-400 rounded-lg text-[11px] hover:bg-neutral-800 cursor-pointer transition-all flex items-center gap-1"
+                  >
+                    🧡 Abrir no VLC
+                  </button>
                 </div>
 
                 {/* Fluctuating equalizer wave bars to simulate live digital stream */}
