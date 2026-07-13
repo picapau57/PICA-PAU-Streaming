@@ -484,9 +484,10 @@ export default function PremiumPlayer({
         )}
 
         {/* Video Controls Layer (Shows on hover) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/60 opacity-0 hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4 z-20">
-          
-          {/* Top Controls: Meta Title */}
+        {!hasPlaybackError && (
+          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-black/60 opacity-0 hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4 z-20">
+            
+            {/* Top Controls: Meta Title */}
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-neutral-900 flex items-center justify-center text-xl overflow-hidden border border-white/10">
@@ -695,6 +696,7 @@ export default function PremiumPlayer({
           </div>
 
         </div>
+        )}
       </div>
 
       {/* Under Player EPG info or Seasons/Episodes list */}
