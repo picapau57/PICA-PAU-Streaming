@@ -53,6 +53,7 @@ export default function PremiumPlayer({
   // Error/Fallback visualizer state (if source is blocked by CORS/cannot load in web frame)
   const [hasPlaybackError, setHasPlaybackError] = useState(false);
   const [simulatedTime, setSimulatedTime] = useState(0);
+  const [showUnlockInstructions, setShowUnlockInstructions] = useState(false);
 
   // EPG Mock updates for live channels
   const [epgTimeline, setEpgTimeline] = useState({
@@ -316,8 +317,66 @@ export default function PremiumPlayer({
             className="w-full h-full object-contain"
             muted={isMuted}
           />
+        ) : showUnlockInstructions ? (
+          /* Sandbox Fallback visualizer: Detailed Unblocking Instructions */
+          <div className="absolute inset-0 bg-neutral-950/98 flex flex-col items-center justify-center p-6 text-white overflow-y-auto select-text">
+            <div className="relative z-10 max-w-md w-full space-y-4">
+              <div className="flex items-center gap-2 text-yellow-500 font-bold text-sm">
+                <Sparkles className="w-5 h-5 animate-pulse" />
+                <span className="tracking-wider">GUIA DE DESBLOQUEIO DE MÍDIA</span>
+              </div>
+              <h4 className="text-base font-bold text-white">Por que o player está simulado ("codificado")?</h4>
+              <p className="text-xs text-neutral-300 leading-relaxed">
+                Este aplicativo roda sob uma conexão segura <strong>HTTPS</strong>. 
+                Sua lista IPTV e filmes utilizam links <strong>HTTP</strong> normais, ou possuem restrições de segurança <strong>CORS</strong>. 
+                Os navegadores modernos (Chrome, Edge, Firefox) bloqueiam este tipo de conteúdo misto por padrão para sua proteção.
+              </p>
+              
+              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-3 text-xs space-y-3 text-left">
+                <p className="font-semibold text-neon-blue">🔑 Como assistir de verdade em 30 segundos:</p>
+                <ol className="list-decimal pl-4 space-y-2 text-neutral-300">
+                  <li>
+                    <strong>Abra o App em Nova Guia:</strong> É mais fácil configurar fora do frame do AI Studio. 
+                    <button 
+                      onClick={() => window.open(window.location.origin, "_blank")}
+                      className="ml-2 px-2 py-0.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/40 rounded text-[10px] hover:bg-neon-blue/40 cursor-pointer font-bold inline-block"
+                    >
+                      Abrir em Nova Guia 🚀
+                    </button>
+                  </li>
+                  <li>
+                    No Chrome/Edge, clique no <strong>ícone de Ajustes / Cadeado 🔒 / Balões</strong> ao lado do link do site na barra de endereços (lado esquerdo).
+                  </li>
+                  <li>
+                    Selecione <strong>"Configurações do site"</strong> (Site Settings).
+                  </li>
+                  <li>
+                    Procure por <strong>"Conteúdo não seguro"</strong> (Insecure content) e mude para <strong>"Permitir"</strong> (Allow).
+                  </li>
+                  <li>
+                    Retorne ao player e <strong>recarregue a página</strong>! A mídia carregará instantaneamente!
+                  </li>
+                </ol>
+              </div>
+
+              <div className="flex gap-2 justify-end text-xs pt-1">
+                <button
+                  onClick={() => window.open(item.url, "_blank")}
+                  className="px-3 py-2 bg-neutral-900 border border-neutral-800 rounded-lg hover:bg-neutral-800 text-neutral-300 cursor-pointer text-xs font-medium"
+                >
+                  Abrir Link Direto do Canal 🔗
+                </button>
+                <button
+                  onClick={() => setShowUnlockInstructions(false)}
+                  className="px-4 py-2 bg-neon-blue text-white rounded-lg font-bold hover:bg-neon-blue/80 cursor-pointer text-xs"
+                >
+                  Voltar ao Player
+                </button>
+              </div>
+            </div>
+          </div>
         ) : (
-          /* Sandbox Fallback visualizer: Gorgeous IPTV simulated streaming display */
+          /* Sandbox Fallback visualizer: Gorgeous IPTV simulated streaming display with info boxes */
           <div className="absolute inset-0 bg-radial from-[#131124] via-[#08080f] to-[#040408] flex flex-col items-center justify-center p-6 select-none overflow-hidden">
             {/* Ambient Background Wave lines */}
             <div className="absolute inset-0 opacity-15 flex items-center justify-around pointer-events-none">
@@ -327,14 +386,14 @@ export default function PremiumPlayer({
             </div>
 
             {/* Glowing Sandbox stream screen */}
-            <div className="relative z-10 flex flex-col items-center text-center max-w-md">
-              <div className="relative w-24 h-24 mb-4 rounded-full bg-neutral-900 flex items-center justify-center text-4xl border-2 border-neon-blue/30 shadow-[0_0_30px_rgba(0,240,255,0.15)]">
+            <div className="relative z-10 flex flex-col items-center text-center max-w-sm">
+              <div className="relative w-20 h-20 mb-3 rounded-full bg-neutral-900 flex items-center justify-center text-3xl border-2 border-neon-blue/30 shadow-[0_0_30px_rgba(0,240,255,0.15)]">
                 {item.logo ? (
-                  <img src={item.logo} alt="" className="w-12 h-12 object-cover rounded-xl" referrerPolicy="no-referrer" />
+                  <img src={item.logo} alt="" className="w-10 h-10 object-cover rounded-xl" referrerPolicy="no-referrer" />
                 ) : (
                   "🐦"
                 )}
-                <div className="absolute -bottom-1 -right-1 bg-neon-purple text-white text-[9px] font-mono font-bold px-1.5 py-0.5 rounded-md">
+                <div className="absolute -bottom-1 -right-1 bg-neon-purple text-white text-[8px] font-mono font-bold px-1 py-0.5 rounded-md">
                   LIVE PROXY
                 </div>
               </div>
@@ -343,19 +402,39 @@ export default function PremiumPlayer({
                 <span className="text-[10px] font-mono tracking-widest text-neon-blue uppercase">
                   📡 CONEXÃO SEGURA E ATIVA (SSL)
                 </span>
-                <h4 className="text-xl font-bold font-display text-white">{item.name}</h4>
-                <p className="text-xs text-neutral-400 max-w-sm line-clamp-2">
+                <h4 className="text-lg font-bold font-display text-white">{item.name}</h4>
+                <p className="text-xs text-neutral-400 max-w-xs line-clamp-2">
                   {item.description || "Iniciando codificador de mídia premium da lista IPTV pessoal..."}
                 </p>
               </div>
 
+              {/* Warning box */}
+              <div className="mt-3 px-3 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-xl text-[11px] text-yellow-500 max-w-xs leading-relaxed">
+                ⚠️ Mídia bloqueada pelo navegador (Mixed Content / CORS). Os links HTTP são protegidos pelo HTTPS.
+              </div>
+
+              <div className="mt-3.5 flex items-center gap-2">
+                <button
+                  onClick={() => setShowUnlockInstructions(true)}
+                  className="px-3 py-1.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/30 rounded-lg text-xs font-bold hover:bg-neon-blue/40 cursor-pointer transition-all flex items-center gap-1"
+                >
+                  🔓 Como Assistir?
+                </button>
+                <button
+                  onClick={() => window.open(item.url, "_blank")}
+                  className="px-3 py-1.5 bg-neutral-800 border border-neutral-700 text-neutral-300 rounded-lg text-xs hover:bg-neutral-700 cursor-pointer transition-all flex items-center gap-1"
+                >
+                  🔗 Abrir Link Direto
+                </button>
+              </div>
+
               {/* Fluctuating equalizer wave bars to simulate live digital stream */}
-              <div className="flex items-end justify-center gap-1.5 h-12 mt-6">
-                {[4, 8, 12, 6, 9, 14, 10, 5, 8, 11, 7, 13, 9, 4].map((h, idx) => (
+              <div className="flex items-end justify-center gap-1 h-8 mt-5">
+                {[4, 8, 12, 6, 9, 14, 10, 5, 8, 11].map((h, idx) => (
                   <motion.div
                     key={idx}
                     animate={{
-                      height: isPlaying ? [10, h * 3, 10] : 10,
+                      height: isPlaying ? [8, h * 2, 8] : 8,
                     }}
                     transition={{
                       duration: 0.8 + (idx * 0.1) % 0.5,
