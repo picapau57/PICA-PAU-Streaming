@@ -54,6 +54,7 @@ export default function PremiumPlayer({
   const [hasPlaybackError, setHasPlaybackError] = useState(false);
   const [simulatedTime, setSimulatedTime] = useState(0);
   const [showUnlockInstructions, setShowUnlockInstructions] = useState(false);
+  const [useProxy, setUseProxy] = useState(true);
 
   // EPG Mock updates for live channels
   const [epgTimeline, setEpgTimeline] = useState({
@@ -84,6 +85,9 @@ export default function PremiumPlayer({
     }
 
     const isM3U8 = item.url.includes(".m3u8") || item.url.includes("/m3u8") || item.url.includes("playlist");
+    const finalUrl = useProxy && (item.url.startsWith("http://") || item.url.startsWith("https://"))
+      ? `/api/stream-media?url=${encodeURIComponent(item.url)}`
+      : item.url;
 
     if (isM3U8) {
       if (Hls.isSupported()) {
@@ -92,7 +96,7 @@ export default function PremiumPlayer({
           lowLatencyMode: true,
         });
         hlsRef.current = hls;
-        hls.loadSource(item.url);
+        hls.loadSource(finalUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play()
@@ -124,7 +128,7 @@ export default function PremiumPlayer({
         });
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         // Native HLS support (Safari)
-        video.src = item.url;
+        video.src = finalUrl;
         video.addEventListener("loadedmetadata", () => {
           video.play()
             .then(() => setIsPlaying(true))
@@ -139,7 +143,7 @@ export default function PremiumPlayer({
       }
     } else {
       // Standard video (MP4, etc.)
-      video.src = item.url;
+      video.src = finalUrl;
       video.load();
       video.play()
         .then(() => setIsPlaying(true))
@@ -155,7 +159,7 @@ export default function PremiumPlayer({
         hlsRef.current = null;
       }
     };
-  }, [item.url]);
+  }, [item.url, useProxy]);
 
   // Handle Simulated time ticks
   useEffect(() => {
@@ -627,6 +631,24 @@ export default function PremiumPlayer({
                             </button>
                           ))}
                         </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-white/5">
+                        <span className="block text-[9px] font-mono uppercase text-neutral-500 mb-1">Servidor Proxy</span>
+                        <button
+                          onClick={() => setUseProxy(!useProxy)}
+                          className={`w-full py-1.5 rounded text-left px-2 flex items-center justify-between text-[10px] ${
+                            useProxy ? "bg-neon-blue/20 text-neon-blue font-bold" : "hover:bg-white/5 text-neutral-400"
+                          }`}
+                        >
+                          <span>Proxy de Mídia</span>
+                          <span className="text-[8px] px-1 py-0.5 bg-neutral-900 border border-white/10 rounded font-bold font-mono">
+                            {useProxy ? "ON" : "OFF"}
+                          </span>
+                        </button>
+                        <p className="text-[8px] text-neutral-500 mt-1 px-1 leading-tight">
+                          Recomendado para burlar bloqueios (CORS/HTTP) do navegador.
+                        </p>
                       </div>
                     </div>
                   )}

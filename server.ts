@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import { Readable } from "stream";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 
@@ -675,6 +676,105 @@ app.get("/api/proxy", async (req, res) => {
   } catch (err: any) {
     writeLog("error", `Falha de proxy para URL ${url}: ${err.message}`);
     res.status(500).json({ error: "Falha de streaming/proxy: " + err.message });
+  }
+});
+
+// Stream proxy route to support Range requests and chunked streaming for movies/live streams
+app.get("/api/stream-media", async (req, res) => {
+  const { url } = req.query;
+  if (!url || typeof url !== "string") {
+    return res.status(400).json({ error: "Parâmetro URL é obrigatório." });
+  }
+
+  try {
+    const headers: Record<string, string> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    };
+
+    // Forward Range header from client to support seeking on standard movies
+    if (req.headers.range) {
+      headers["Range"] = req.headers.range;
+    }
+
+    // If it's an M3U8, we fetch and rewrite relative URLs to go through our proxy
+    const lowerUrl = url.toLowerCase();
+    const isM3U8 = lowerUrl.includes(".m3u8") || lowerUrl.includes("playlist") || lowerUrl.includes("m3u8");
+
+    if (isM3U8) {
+      const response = await fetch(url, { headers });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ao acessar playlist remota.`);
+      }
+      
+      const text = await response.text();
+      const u = new URL(url);
+      const baseUrl = u.href.substring(0, u.href.lastIndexOf("/") + 1);
+
+      // Rewrite relative URLs to absolute URLs that are proxied
+      const lines = text.split(/\r?\n/);
+      const rewrittenLines = lines.map(line => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          let absoluteUrl = trimmed;
+          if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) {
+            try {
+              absoluteUrl = new URL(trimmed, baseUrl).href;
+            } catch {
+              return line;
+            }
+          }
+          // Proxy the segment as well to bypass CORS and SSL mixed content blocks
+          return `/api/stream-media?url=${encodeURIComponent(absoluteUrl)}`;
+        }
+        return line;
+      });
+
+      res.set("Access-Control-Allow-Origin", "*");
+      res.set("Access-Control-Allow-Headers", "*");
+      res.set("Content-Type", "application/vnd.apple.mpegurl");
+      return res.send(rewrittenLines.join("\n"));
+    }
+
+    // Direct streaming for binary files (MP4, MKV, TS segments, etc.)
+    const response = await fetch(url, { headers });
+
+    // Status and headers forwarding
+    res.status(response.status);
+
+    const forwardHeaders = [
+      "content-type",
+      "content-length",
+      "content-range",
+      "accept-ranges"
+    ];
+
+    forwardHeaders.forEach(h => {
+      const val = response.headers.get(h);
+      if (val) {
+        res.set(h, val);
+      }
+    });
+
+    // Set CORS headers
+    res.set("Access-Control-Allow-Origin", "*");
+    res.set("Access-Control-Allow-Headers", "*");
+
+    if (response.body) {
+      const stream = Readable.fromWeb(response.body as any);
+      stream.pipe(res);
+      
+      // If client aborts connection, destroy stream to avoid dangling connections
+      req.on("close", () => {
+        stream.destroy();
+      });
+    } else {
+      res.end();
+    }
+  } catch (err: any) {
+    writeLog("error", `Falha ao transmitir mídia ${url}: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Falha ao transmitir mídia: " + err.message });
+    }
   }
 });
 
