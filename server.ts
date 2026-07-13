@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import http from "http";
+import https from "https";
 import { Readable } from "stream";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
@@ -679,6 +681,158 @@ app.get("/api/proxy", async (req, res) => {
   }
 });
 
+// Helper to fetch M3U8 text with support for redirects and expired SSL certificates
+async function fetchM3U8Text(targetUrl: string, redirectCount = 0): Promise<{ text: string, finalUrl: string }> {
+  if (redirectCount > 10) {
+    throw new Error("Muitos redirecionamentos ao buscar playlist.");
+  }
+  return new Promise((resolve, reject) => {
+    try {
+      const parsedUrl = new URL(targetUrl);
+      const isHttps = parsedUrl.protocol === "https:";
+      const client = isHttps ? https : http;
+
+      const req = client.request({
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || (isHttps ? 443 : 80),
+        path: parsedUrl.pathname + parsedUrl.search,
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        },
+        rejectUnauthorized: false,
+      }, (res) => {
+        const status = res.statusCode || 200;
+        if (status >= 300 && status < 400 && res.headers.location) {
+          let location = res.headers.location;
+          if (!location.startsWith("http://") && !location.startsWith("https://")) {
+            location = new URL(location, targetUrl).href;
+          }
+          return resolve(fetchM3U8Text(location, redirectCount + 1));
+        }
+
+        if (status !== 200) {
+          return reject(new Error(`Servidor de mídia retornou status HTTP ${status}`));
+        }
+
+        let data = "";
+        res.on("data", (chunk) => {
+          data += chunk;
+        });
+        res.on("end", () => {
+          resolve({ text: data, finalUrl: targetUrl });
+        });
+      });
+
+      req.on("error", (err) => {
+        reject(err);
+      });
+      req.end();
+    } catch (e: any) {
+      reject(e);
+    }
+  });
+}
+
+// Helper to pipe binary stream with Range support and redirect handling
+function proxyMediaStream(targetUrl: string, req: any, res: any, redirectCount = 0) {
+  if (redirectCount > 10) {
+    return res.status(500).json({ error: "Muitos redirecionamentos no streaming de mídia." });
+  }
+
+  try {
+    const parsedUrl = new URL(targetUrl);
+    const isHttps = parsedUrl.protocol === "https:";
+    const client = isHttps ? https : http;
+
+    const headers: Record<string, any> = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "Accept": "*/*",
+    };
+
+    if (req.headers.range) {
+      headers["Range"] = req.headers.range;
+    }
+
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (isHttps ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: "GET",
+      headers: headers,
+      rejectUnauthorized: false,
+    };
+
+    const remoteReq = client.request(options, (remoteRes) => {
+      const status = remoteRes.statusCode || 200;
+
+      // Handle redirect
+      if (status >= 300 && status < 400 && remoteRes.headers.location) {
+        let location = remoteRes.headers.location;
+        if (!location.startsWith("http://") && !location.startsWith("https://")) {
+          location = new URL(location, targetUrl).href;
+        }
+        return proxyMediaStream(location, req, res, redirectCount + 1);
+      }
+
+      // Headers setup
+      res.status(status);
+      res.set("Access-Control-Allow-Origin", "*");
+      res.set("Access-Control-Allow-Headers", "*");
+
+      const headersToForward = [
+        "content-type",
+        "content-length",
+        "content-range",
+        "accept-ranges",
+        "cache-control",
+      ];
+
+      headersToForward.forEach((h) => {
+        const val = remoteRes.headers[h];
+        if (val) {
+          res.set(h, val);
+        }
+      });
+
+      // If content-type is missing or too generic, guess from target URL
+      const currentContentType = res.get("Content-Type");
+      if (!currentContentType || currentContentType === "application/octet-stream" || currentContentType.includes("text/plain")) {
+        const lowerUrl = targetUrl.toLowerCase();
+        if (lowerUrl.includes(".mp4")) {
+          res.set("Content-Type", "video/mp4");
+        } else if (lowerUrl.includes(".mkv")) {
+          res.set("Content-Type", "video/x-matroska");
+        } else if (lowerUrl.includes(".ts")) {
+          res.set("Content-Type", "video/mp2t");
+        } else if (lowerUrl.includes(".m3u8")) {
+          res.set("Content-Type", "application/vnd.apple.mpegurl");
+        }
+      }
+
+      remoteRes.pipe(res);
+
+      res.on("close", () => {
+        remoteRes.destroy();
+      });
+    });
+
+    remoteReq.on("error", (err) => {
+      writeLog("error", `Erro no proxy de mídia para ${targetUrl}: ${err.message}`);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Erro na conexão com servidor de mídia: " + err.message });
+      }
+    });
+
+    remoteReq.end();
+  } catch (err: any) {
+    writeLog("error", `Falha ao processar URL do proxy ${targetUrl}: ${err.message}`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Parâmetro de URL inválido ou malformado." });
+    }
+  }
+}
+
 // Stream proxy route to support Range requests and chunked streaming for movies/live streams
 app.get("/api/stream-media", async (req, res) => {
   const { url } = req.query;
@@ -686,31 +840,15 @@ app.get("/api/stream-media", async (req, res) => {
     return res.status(400).json({ error: "Parâmetro URL é obrigatório." });
   }
 
-  try {
-    const headers: Record<string, string> = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-    };
+  const lowerUrl = url.toLowerCase();
+  const isM3U8 = lowerUrl.includes(".m3u8") || lowerUrl.includes("playlist") || lowerUrl.includes("m3u8");
 
-    // Forward Range header from client to support seeking on standard movies
-    if (req.headers.range) {
-      headers["Range"] = req.headers.range;
-    }
-
-    // If it's an M3U8, we fetch and rewrite relative URLs to go through our proxy
-    const lowerUrl = url.toLowerCase();
-    const isM3U8 = lowerUrl.includes(".m3u8") || lowerUrl.includes("playlist") || lowerUrl.includes("m3u8");
-
-    if (isM3U8) {
-      const response = await fetch(url, { headers });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status} ao acessar playlist remota.`);
-      }
-      
-      const text = await response.text();
-      const u = new URL(url);
+  if (isM3U8) {
+    try {
+      const { text, finalUrl } = await fetchM3U8Text(url);
+      const u = new URL(finalUrl);
       const baseUrl = u.href.substring(0, u.href.lastIndexOf("/") + 1);
 
-      // Rewrite relative URLs to absolute URLs that are proxied
       const lines = text.split(/\r?\n/);
       const rewrittenLines = lines.map(line => {
         const trimmed = line.trim();
@@ -723,7 +861,6 @@ app.get("/api/stream-media", async (req, res) => {
               return line;
             }
           }
-          // Proxy the segment as well to bypass CORS and SSL mixed content blocks
           return `/api/stream-media?url=${encodeURIComponent(absoluteUrl)}`;
         }
         return line;
@@ -733,49 +870,15 @@ app.get("/api/stream-media", async (req, res) => {
       res.set("Access-Control-Allow-Headers", "*");
       res.set("Content-Type", "application/vnd.apple.mpegurl");
       return res.send(rewrittenLines.join("\n"));
-    }
-
-    // Direct streaming for binary files (MP4, MKV, TS segments, etc.)
-    const response = await fetch(url, { headers });
-
-    // Status and headers forwarding
-    res.status(response.status);
-
-    const forwardHeaders = [
-      "content-type",
-      "content-length",
-      "content-range",
-      "accept-ranges"
-    ];
-
-    forwardHeaders.forEach(h => {
-      const val = response.headers.get(h);
-      if (val) {
-        res.set(h, val);
-      }
-    });
-
-    // Set CORS headers
-    res.set("Access-Control-Allow-Origin", "*");
-    res.set("Access-Control-Allow-Headers", "*");
-
-    if (response.body) {
-      const stream = Readable.fromWeb(response.body as any);
-      stream.pipe(res);
-      
-      // If client aborts connection, destroy stream to avoid dangling connections
-      req.on("close", () => {
-        stream.destroy();
-      });
-    } else {
-      res.end();
-    }
-  } catch (err: any) {
-    writeLog("error", `Falha ao transmitir mídia ${url}: ${err.message}`);
-    if (!res.headersSent) {
-      res.status(500).json({ error: "Falha ao transmitir mídia: " + err.message });
+    } catch (err: any) {
+      writeLog("error", `Falha ao reescrever playlist M3U8 ${url}: ${err.message}`);
+      // Fallback to direct stream proxy if parsing fails
+      return proxyMediaStream(url, req, res);
     }
   }
+
+  // Handle direct file stream proxy
+  return proxyMediaStream(url, req, res);
 });
 
 // Add playlist (with optional online parsing or raw content pasting)
