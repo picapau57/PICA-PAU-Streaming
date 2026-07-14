@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Profile, PlaylistItem, PlaylistMeta, HistoryEntry, SystemSettings } from "./types";
 import { api } from "./lib/api";
 import WelcomeScreen from "./components/WelcomeScreen";
@@ -47,6 +47,7 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstalled, setIsInstalled] = useState(false);
   const [activeMedia, setActiveMedia] = useState<PlaylistItem | null>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
   
   // Loading indicators
   const [isLoading, setIsLoading] = useState(false);
@@ -143,6 +144,15 @@ export default function App() {
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
   }, []);
+
+  // Smooth scroll to player when active media changes (e.g. from bottom lists or history/favorites)
+  useEffect(() => {
+    if (activeMedia) {
+      setTimeout(() => {
+        playerRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 100);
+    }
+  }, [activeMedia?.id]);
 
   const handleTriggerInstall = async () => {
     if (!deferredPrompt) return;
@@ -499,6 +509,7 @@ export default function App() {
         <main className="flex-1 p-6 space-y-8 max-w-7xl w-full mx-auto">
           
           {/* Active Cinema/VOD Player Stage (if set) */}
+          <div ref={playerRef} className="scroll-mt-24" />
           <AnimatePresence>
             {activeMedia && (
               <motion.div
