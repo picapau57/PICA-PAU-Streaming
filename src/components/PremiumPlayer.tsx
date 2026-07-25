@@ -55,8 +55,9 @@ export default function PremiumPlayer({
   const [hasPlaybackError, setHasPlaybackError] = useState(false);
   const [simulatedTime, setSimulatedTime] = useState(0);
   const [showUnlockInstructions, setShowUnlockInstructions] = useState(false);
-  const [useProxy, setUseProxy] = useState(true);
+  const [useProxy, setUseProxy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [forceHttps, setForceHttps] = useState(false);
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(item.url);
@@ -105,16 +106,20 @@ export default function PremiumPlayer({
       hlsRef.current = null;
     }
 
-    const isM3U8 = item.url.includes(".m3u8") || item.url.includes("/m3u8") || item.url.includes("playlist");
-    const finalUrl = useProxy && (item.url.startsWith("http://") || item.url.startsWith("https://"))
-      ? `/api/stream-media?url=${encodeURIComponent(item.url)}`
-      : item.url;
+    let rawUrl = forceHttps ? item.url.replace(/^http:\/\//i, "https://") : item.url;
+    const isM3U8 = rawUrl.toLowerCase().includes(".m3u8") || rawUrl.toLowerCase().includes("/m3u8") || rawUrl.toLowerCase().includes("playlist");
+    const finalUrl = useProxy && (rawUrl.startsWith("http://") || rawUrl.startsWith("https://"))
+      ? `/api/stream-media?url=${encodeURIComponent(rawUrl)}`
+      : rawUrl;
 
     if (isM3U8) {
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: true,
+          xhrSetup: (xhr, url) => {
+            xhr.withCredentials = false;
+          }
         });
         hlsRef.current = hls;
         hls.loadSource(finalUrl);
@@ -131,8 +136,12 @@ export default function PremiumPlayer({
           if (data.fatal) {
             switch (data.type) {
               case Hls.ErrorTypes.NETWORK_ERROR:
-                console.warn("Fatal network error in HLS, attempting recovery...");
-                hls.startLoad();
+                console.warn("Network error in HLS, attempting recovery or direct fallback...");
+                if (useProxy) {
+                  setUseProxy(false);
+                } else {
+                  hls.startLoad();
+                }
                 break;
               case Hls.ErrorTypes.MEDIA_ERROR:
                 console.warn("Fatal media error in HLS, attempting recovery...");
@@ -140,7 +149,11 @@ export default function PremiumPlayer({
                 break;
               default:
                 console.error("Unrecoverable HLS error, showing fallback simulated player", data);
-                setHasPlaybackError(true);
+                if (useProxy) {
+                  setUseProxy(false);
+                } else {
+                  setHasPlaybackError(true);
+                }
                 hls.destroy();
                 hlsRef.current = null;
                 break;
@@ -163,7 +176,7 @@ export default function PremiumPlayer({
         setHasPlaybackError(true);
       }
     } else {
-      // Standard video (MP4, etc.)
+      // Standard video (MP4, MKV, TS, etc.)
       video.src = finalUrl;
       video.load();
       video.play()
@@ -180,7 +193,7 @@ export default function PremiumPlayer({
         hlsRef.current = null;
       }
     };
-  }, [item.url, useProxy]);
+  }, [item.url, useProxy, forceHttps]);
 
   // Handle Simulated time ticks
   useEffect(() => {
@@ -319,8 +332,60 @@ export default function PremiumPlayer({
   const activeDuration = hasPlaybackError ? 7200 : (duration || 3600);
 
   return (
-    <div id="premium-player-module" className="space-y-6">
+    <div id="premium-player-module" className="space-y-4">
       
+      {/* Quick Stream Control Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-2 bg-neutral-900/90 border border-white/10 rounded-xl p-3 px-4 text-xs shadow-lg">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${hasPlaybackError ? "bg-yellow-500 animate-ping" : "bg-green-400 animate-pulse"}`} />
+          <div className="min-w-0">
+            <h4 className="font-bold text-white text-xs sm:text-sm truncate">{item.name}</h4>
+            <span className="text-[10px] font-mono text-neutral-400 flex items-center gap-1">
+              <span>{forceHttps ? "HTTPS (Forçado)" : item.url.startsWith("https") ? "HTTPS Seguros" : "HTTP Direto"}</span>
+              <span>•</span>
+              <span>{useProxy ? "Proxy SSL" : "Reprodução Direta"}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              setHasPlaybackError(false);
+              setUseProxy(!useProxy);
+            }}
+            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              useProxy 
+                ? "bg-neon-purple/20 text-neon-purple border-neon-purple/40" 
+                : "bg-neutral-800 text-neutral-300 border-neutral-700 hover:bg-neutral-700"
+            }`}
+            title="Alternar modo de conexão"
+          >
+            {useProxy ? "🔒 Modo Proxy" : "⚡ Modo Direto"}
+          </button>
+
+          <button
+            onClick={() => window.open(item.url, "_blank")}
+            className="px-3 py-1.5 bg-neon-blue text-black font-extrabold rounded-lg hover:bg-neon-blue/80 cursor-pointer transition-all flex items-center gap-1.5 shadow-md shadow-neon-blue/20 text-[11px]"
+            title="Abrir o link do filme diretamente em uma nova aba do navegador"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Abrir Filme Direto 🚀</span>
+          </button>
+
+          <button
+            onClick={() => {
+              const vlcUrl = `vlc://${item.url.replace(/^https?:\/\//, "")}`;
+              window.location.href = vlcUrl;
+            }}
+            className="px-2.5 py-1.5 bg-orange-600/20 text-orange-400 border border-orange-500/30 rounded-lg hover:bg-orange-600/30 cursor-pointer text-[11px] font-bold transition-all flex items-center gap-1"
+            title="Abrir no aplicativo VLC Player"
+          >
+            <span>🧡 VLC</span>
+          </button>
+        </div>
+      </div>
+
       {/* Outer Video Frame with Cinema expansions */}
       <div 
         ref={containerRef}
@@ -335,8 +400,16 @@ export default function PremiumPlayer({
           onLoadedMetadata={handleTimeUpdate}
           onClick={togglePlay}
           onError={() => {
-            console.warn("Video element triggered load error, reverting to simulated stream proxy screen");
-            setHasPlaybackError(true);
+            console.warn("Video element load error for:", item.url);
+            if (useProxy) {
+              console.log("Proxy failed, trying direct URL...");
+              setUseProxy(false);
+            } else if (!forceHttps && item.url.startsWith("http://")) {
+              console.log("Direct HTTP failed, trying HTTPS...");
+              setForceHttps(true);
+            } else {
+              setHasPlaybackError(true);
+            }
           }}
           className={`w-full h-full object-contain ${hasPlaybackError ? "hidden" : "block"}`}
           muted={isMuted}
@@ -471,36 +544,36 @@ export default function PremiumPlayer({
 
                 <div className="mt-3.5 flex flex-wrap items-center justify-center gap-2">
                   <button
-                    onClick={() => setShowUnlockInstructions(true)}
-                    className="px-2.5 py-1.5 bg-neon-blue/20 text-neon-blue border border-neon-blue/30 rounded-lg text-[11px] font-bold hover:bg-neon-blue/40 cursor-pointer transition-all flex items-center gap-1"
+                    onClick={() => window.open(item.url, "_blank")}
+                    className="px-3.5 py-2 bg-neon-blue text-black font-extrabold rounded-lg text-xs hover:bg-neon-blue/80 cursor-pointer transition-all flex items-center gap-1.5 shadow-lg shadow-neon-blue/20"
                   >
-                    🔓 Como Assistir?
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Abrir Filme em Nova Aba 🚀</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setHasPlaybackError(false);
+                      setUseProxy(false);
+                    }}
+                    className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-700 rounded-lg text-xs font-bold cursor-pointer transition-all flex items-center gap-1"
+                  >
+                    <span>🔄 Tentar Novamente</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowUnlockInstructions(true)}
+                    className="px-2.5 py-2 bg-neutral-900 border border-neutral-800 text-neutral-300 rounded-lg text-xs font-bold hover:bg-neutral-800 cursor-pointer transition-all flex items-center gap-1"
+                  >
+                    🔓 Como Desbloquear?
                   </button>
                   
-                  <button
-                    onClick={handleDownloadM3U}
-                    className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white border border-orange-500/40 rounded-lg text-[11px] font-bold cursor-pointer transition-all flex items-center gap-1 shadow-lg shadow-orange-600/20"
-                  >
-                    📥 Baixar .M3U (VLC)
-                  </button>
-
-                  <button
-                    onClick={handleCopyLink}
-                    className={`px-2.5 py-1.5 text-[11px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1 border ${
-                      copied 
-                        ? "bg-green-600 text-white border-green-500/40" 
-                        : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:bg-neutral-700"
-                    }`}
-                  >
-                    {copied ? "✅ Copiado!" : "📋 Copiar Link"}
-                  </button>
-
                   <button
                     onClick={() => {
                       const vlcUrl = `vlc://${item.url.replace(/^https?:\/\//, "")}`;
                       window.location.href = vlcUrl;
                     }}
-                    className="px-2.5 py-1.5 bg-neutral-900 border border-neutral-800 text-neutral-400 rounded-lg text-[11px] hover:bg-neutral-800 cursor-pointer transition-all flex items-center gap-1"
+                    className="px-2.5 py-2 bg-orange-600/20 text-orange-400 border border-orange-500/30 rounded-lg text-xs font-bold hover:bg-orange-600/30 cursor-pointer transition-all flex items-center gap-1"
                   >
                     🧡 Abrir no VLC
                   </button>
