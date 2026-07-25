@@ -68,11 +68,11 @@ export default function ManageListModal({
         count++;
       }
     }
-    // Fallback: if no #EXTINF but we have URLs (one link per line)
+    // Fallback: if no #EXTINF but we have plain link lines (one link per line)
     if (count === 0) {
       const urls = lines.filter(line => {
         const l = line.trim();
-        return l.startsWith("http://") || l.startsWith("https://") || l.includes("://");
+        return l.length > 0 && !l.startsWith("#");
       });
       count = urls.length;
     }

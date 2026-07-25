@@ -462,45 +462,70 @@ function parseM3UPlaylist(m3uText: string): PlaylistItem[] {
       if (currentMeta) {
         currentMeta.group = line.replace("#EXTGRP:", "").trim();
       }
-    } else if (line.startsWith("http://") || line.startsWith("https://") || line.includes("://") || line.endsWith(".m3u8") || line.endsWith(".mp4") || line.endsWith(".ts")) {
-      if (currentMeta) {
-        // Detect category based on name, group, URL path
-        let category: "tv" | "movie" | "series" | "sports" | "kids" | "news" | "music" | "documentary" | "adult" = "tv";
-        const combinedText = `${currentMeta.name} ${currentMeta.group} ${line}`.toLowerCase();
-
-        if (combinedText.includes("kids") || combinedText.includes("infantil") || combinedText.includes("desenho") || combinedText.includes("disney") || combinedText.includes("cartoon")) {
-          category = "kids";
-        } else if (combinedText.includes("sports") || combinedText.includes("esporte") || combinedText.includes("premiere") || combinedText.includes("futebol") || combinedText.includes("combate") || combinedText.includes("espn") || combinedText.includes("arena")) {
-          category = "sports";
-        } else if (combinedText.includes("news") || combinedText.includes("noticia") || combinedText.includes("jornal") || combinedText.includes("cnn") || combinedText.includes("globonews")) {
-          category = "news";
-        } else if (combinedText.includes("music") || combinedText.includes("musica") || combinedText.includes("mtv") || combinedText.includes("show")) {
-          category = "music";
-        } else if (combinedText.includes("documentary") || combinedText.includes("documentario") || combinedText.includes("discovery") || combinedText.includes("history") || combinedText.includes("nasa")) {
-          category = "documentary";
-        } else if (combinedText.includes("adulto") || combinedText.includes("adult") || combinedText.includes("xxx") || combinedText.includes("playboy") || combinedText.includes("sexy")) {
-          category = "adult";
-        } else if (currentMeta.season !== undefined || combinedText.includes("s0") || combinedText.includes("s1") || combinedText.includes("temporada") || combinedText.includes("serie")) {
-          category = "series";
-        } else if (line.endsWith(".mp4") || line.endsWith(".mkv") || line.endsWith(".avi") || combinedText.includes("filme") || combinedText.includes("movie") || currentMeta.duration) {
-          category = "movie";
+    } else if (!line.startsWith("#")) {
+      let finalUrl = line;
+      if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://") && !finalUrl.startsWith("pasted://")) {
+        if (finalUrl.includes(".") || finalUrl.includes("/")) {
+          finalUrl = "https://" + finalUrl;
         }
-
-        items.push({
-          id: `iptv-${crypto.randomBytes(6).toString("hex")}`,
-          name: currentMeta.name,
-          logo: currentMeta.logo,
-          group: currentMeta.group,
-          category,
-          url: line,
-          epgId: currentMeta.epgId,
-          duration: currentMeta.duration,
-          season: currentMeta.season,
-          episode: currentMeta.episode
-        });
-
-        currentMeta = null;
       }
+
+      if (!currentMeta) {
+        let name = "Mídia " + (items.length + 1);
+        try {
+          const rawPath = line.split("?")[0];
+          const parts = rawPath.split("/").filter(Boolean);
+          const lastPart = parts[parts.length - 1];
+          if (lastPart) {
+            name = decodeURIComponent(lastPart).replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+          }
+        } catch (e) {}
+
+        currentMeta = {
+          name: name || ("Mídia " + (items.length + 1)),
+          logo: "https://images.unsplash.com/photo-1574375927938-d5a98e8edd86?w=100&h=100&fit=crop",
+          group: "Importados",
+          epgId: ""
+        };
+      }
+
+      let category: "tv" | "movie" | "series" | "sports" | "kids" | "news" | "music" | "documentary" | "adult" = "movie";
+      const combinedText = `${currentMeta.name} ${currentMeta.group} ${finalUrl}`.toLowerCase();
+
+      if (combinedText.includes("kids") || combinedText.includes("infantil") || combinedText.includes("desenho") || combinedText.includes("disney") || combinedText.includes("cartoon")) {
+        category = "kids";
+      } else if (combinedText.includes("sports") || combinedText.includes("esporte") || combinedText.includes("premiere") || combinedText.includes("futebol") || combinedText.includes("combate") || combinedText.includes("espn") || combinedText.includes("arena")) {
+        category = "sports";
+      } else if (combinedText.includes("news") || combinedText.includes("noticia") || combinedText.includes("jornal") || combinedText.includes("cnn") || combinedText.includes("globonews")) {
+        category = "news";
+      } else if (combinedText.includes("music") || combinedText.includes("musica") || combinedText.includes("mtv") || combinedText.includes("show")) {
+        category = "music";
+      } else if (combinedText.includes("documentary") || combinedText.includes("documentario") || combinedText.includes("discovery") || combinedText.includes("history") || combinedText.includes("nasa")) {
+        category = "documentary";
+      } else if (combinedText.includes("adulto") || combinedText.includes("adult") || combinedText.includes("xxx") || combinedText.includes("playboy") || combinedText.includes("sexy")) {
+        category = "adult";
+      } else if (currentMeta.season !== undefined || combinedText.includes("s0") || combinedText.includes("s1") || combinedText.includes("temporada") || combinedText.includes("serie")) {
+        category = "series";
+      } else if (combinedText.includes("tv") || combinedText.includes("canal") || combinedText.includes("ao vivo") || combinedText.includes("live")) {
+        category = "tv";
+      } else {
+        category = "movie";
+      }
+
+      items.push({
+        id: `iptv-${crypto.randomBytes(6).toString("hex")}`,
+        name: currentMeta.name,
+        logo: currentMeta.logo,
+        group: currentMeta.group,
+        category,
+        url: finalUrl,
+        epgId: currentMeta.epgId,
+        duration: currentMeta.duration,
+        season: currentMeta.season,
+        episode: currentMeta.episode
+      });
+
+      currentMeta = null;
     }
   }
 
